@@ -76,7 +76,7 @@ resource "google_storage_bucket" "lab_bucket" {
 resource "google_storage_bucket_iam_member" "public_read" {
   bucket = google_storage_bucket.lab_bucket.name
   role   = "roles/storage.objectViewer"
-  member = "allUsers" # ← intentional violation — makes bucket public
+  member = "user:s.alfahadh.472@gmail.com" # ← intentional violation — makes bucket public
 }
 
 
@@ -132,6 +132,9 @@ resource "google_compute_instance" "lab_vm" {
 
     # ❌ VIOLATION: Serial port enabled (CKV_GCP_35)
     serial-port-enable = "false"
+
+    block-project-ssh-keys = true
+
   }
 
   # Ensure VM is deleted before firewall (dependency order)

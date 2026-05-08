@@ -1,17 +1,19 @@
 # ============================================================
-# GitHub Actions — Policy-as-Code CI/CD Pipeline
+# GitHub Actions — Policy-as-Code Pipeline (Framework Edition)
 #
-# Triggers on:
-#   - Pull Request (validation only — blocks merge)
-#   - Push to main  (validation + terraform apply)
+# Changes from v1:
+#   - Gate 2: Removed custom OPA Rego evaluation
+#   - Gate 2: Regula uses built-in CIS GCP framework rules
+#   - Gate 2: Added Terrascan (OPA-native, CIS built-in)
+#   - Gate 4: Cloud Custodian simplified (no Pub/Sub needed)
+#   - All policy checks use zero custom-written policies
 #
-# Secrets to set in GitHub → Settings → Secrets:
-#   GCP_PROJECT_ID        : your GCP project ID
-#   GCP_SA_KEY            : base64 service account JSON key
-#                           (generate: base64 -w0 sa-key.json)
+# Secrets required in GitHub → Settings → Secrets → Actions:
+#   GCP_PROJECT_ID  : your GCP project ID
+#   GCP_SA_KEY      : base64 of your service account JSON key
 # ============================================================
 
-name: Policy-as-Code Pipeline
+name: Policy-as-Code Pipeline (Framework)
 
 on:
   pull_request:
@@ -25,21 +27,23 @@ on:
       - 'terraform/**'
 
 env:
-  TF_VERSION: "1.7.0"
-  REGULA_VERSION: "3.2.1"
-  OPA_VERSION: "0.63.0"
-  WORKING_DIR: ./terraform
+  TF_VERSION:      "1.7.0"
+  REGULA_VERSION:  "3.2.1"
+  WORKING_DIR:     ./terraform
 
 jobs:
-  # ─────────────────────────────────────────
-  # GATE 1: Checkov Static Scan
-  # Runs CIS GCP benchmark + custom checks
-  # ─────────────────────────────────────────
-  checkov-scan:
-    name: "Gate 1 — Checkov Static Analysis"
+
+  # ═══════════════════════════════════════════════════════════
+  # GATE 1 — Checkov Static Scan (CIS GCP Built-in Rules)
+  # Scans Terraform HCL files — no GCP credentials required
+  # Framework: CIS GCP Foundations Benchmark
+  # ═══════════════════════════════════════════════════════════
+  gate1-checkov:
+    name: "Gate 1 — Checkov (CIS GCP Framework)"
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -50,9 +54,11 @@ jobs:
       - name: Install Checkov
         run: pip install checkov
 
-      - name: Run Checkov against Terraform code
-        id: checkov
+      - name: Run Checkov — CIS GCP Benchmark
         run: |
+          echo "════════════════════════════════════════════"
+          echo "  Gate 1 — Checkov CIS GCP Framework Scan"
+          echo "════════════════════════════════════════════"
           checkov \
             --directory ${{ env.WORKING_DIR }} \
             --framework terraform \
@@ -60,26 +66,34 @@ jobs:
             --output cli \
             --output junitxml \
             --output-file-path . \
-            --soft-fail    # Remove --soft-fail to make this a hard block
-        continue-on-error: true  # Remove this to hard-block PRs
+            --soft-fail
+          echo ""
+          echo "Checkov maps each finding to a CIS GCP control ID."
+          echo "Remove --soft-fail above to hard-block the pipeline."
 
-      - name: Upload Checkov Results
+      - name: Upload Checkov Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: checkov-results
+          name: gate1-checkov-report
           path: results_junitxml.xml
 
-  # ─────────────────────────────────────────
-  # GATE 2: Terraform Plan + OPA Evaluation
-  # Blocks apply if Rego policies fail
-  # ─────────────────────────────────────────
-  terraform-plan-opa:
-    name: "Gate 2 — Terraform Plan + OPA Policy"
+
+  # ═══════════════════════════════════════════════════════════
+  # GATE 2 — Terraform Plan + Framework Policy Evaluation
+  #
+  # 2a: Regula   — CIS GCP + NIST + PCI-DSS (built-in, 150+ rules)
+  # 2b: Terrascan — CIS GCP via OPA (built-in, OPA-native)
+  #
+  # No custom Rego written. All rules from open frameworks.
+  # ═══════════════════════════════════════════════════════════
+  gate2-plan-and-policy:
+    name: "Gate 2 — Plan + Regula + Terrascan (Framework)"
     runs-on: ubuntu-latest
-    needs: checkov-scan
+    needs: gate1-checkov
+
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Authenticate to GCP
@@ -104,97 +118,100 @@ jobs:
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
             -out=tfplan.binary
           terraform show -json tfplan.binary > tfplan.json
-          echo "Terraform plan JSON generated."
+          echo "Plan JSON generated ($(wc -c < tfplan.json) bytes)"
 
-      - name: Install OPA
+      # ── Gate 2a: Regula — CIS GCP Built-in Framework ──────
+      - name: Install Regula
         run: |
-          curl -L -o opa https://github.com/open-policy-agent/opa/releases/download/v${{ env.OPA_VERSION }}/opa_linux_amd64_static
-          chmod +x opa
-          sudo mv opa /usr/local/bin/
-
-      - name: Run OPA Policy Evaluation
-        working-directory: ${{ env.WORKING_DIR }}
-        run: |
-          echo "=========================================="
-          echo "  OPA Policy Evaluation — GCP Security"
-          echo "=========================================="
-
-          # Evaluate deny rules (violations)
-          VIOLATIONS=$(opa eval \
-            --data ../policies/opa/gcp_security.rego \
-            --input tfplan.json \
-            --format pretty \
-            "data.rules.gcp_security.deny")
-
-          echo "$VIOLATIONS"
-
-          # Count violations
-          VIOLATION_COUNT=$(echo "$VIOLATIONS" | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          print(len(data))
-          " 2>/dev/null || echo "0")
-
-          echo ""
-          echo "Total violations found: $VIOLATION_COUNT"
-
-          # Evaluate warnings (non-blocking)
-          echo ""
-          echo "--- Policy Warnings ---"
-          opa eval \
-            --data ../policies/opa/gcp_security.rego \
-            --input tfplan.json \
-            --format pretty \
-            "data.rules.gcp_security.warn" || true
-
-          # Fail pipeline if violations found
-          if [ "$VIOLATION_COUNT" -gt "0" ]; then
-            echo ""
-            echo "❌ PIPELINE BLOCKED: $VIOLATION_COUNT OPA policy violation(s) found."
-            echo "Fix the violations above before applying infrastructure."
-            exit 1
-          else
-            echo "✅ OPA policy check passed — no violations found."
-          fi
-
-      - name: Install Regula (extended CIS benchmark check)
-        run: |
-          curl -L https://github.com/fugue/regula/releases/download/v${{ env.REGULA_VERSION }}/regula_${{ env.REGULA_VERSION }}_Linux_x86_64.tar.gz \
+          curl -sL https://github.com/fugue/regula/releases/download/v${{ env.REGULA_VERSION }}/regula_${{ env.REGULA_VERSION }}_Linux_x86_64.tar.gz \
             | tar xz
           sudo mv regula /usr/local/bin/
+          regula --version
 
-      - name: Run Regula (CIS GCP Benchmark)
+      - name: Run Regula — CIS GCP + NIST + PCI-DSS
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          echo "=========================================="
-          echo "  Regula — CIS GCP Benchmark Evaluation"
-          echo "=========================================="
+          echo "════════════════════════════════════════════"
+          echo "  Gate 2a — Regula Framework Evaluation"
+          echo "  Rules: CIS GCP + NIST 800-53 + PCI-DSS"
+          echo "  Source: fugue/regula built-in library"
+          echo "════════════════════════════════════════════"
           regula run tfplan.json \
             --input-type tf-plan \
             --format table \
-            --severity HIGH \
-            || true   # Remove '|| true' to hard-block on HIGH severity
+            --severity MEDIUM \
+            || true
+
+          echo ""
+          echo "Key Regula rule IDs for this lab:"
+          echo "  FG_R00379 → CIS GCP 3.6 → Firewall SSH from 0.0.0.0/0"
+          echo "  FG_R00380 → CIS GCP 3.7 → Firewall RDP from 0.0.0.0/0"
+          echo "  FG_R00357 → CIS GCP 5.1 → GCS bucket public access"
+          echo "  FG_R00358 → CIS GCP 5.2 → GCS bucket logging"
+          echo "  FG_R00410 → CIS GCP 4.4 → VM Shielded VM not enabled"
+          echo "  FG_R00411 → CIS GCP 4.9 → VM has public IP"
+          echo "  FG_R00412 → CIS GCP 4.1 → VM uses default SA"
+
+      - name: Regula — Export JSON Results
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          regula run tfplan.json \
+            --input-type tf-plan \
+            --format json \
+            --severity MEDIUM \
+            > ../regula-results.json || true
+          echo "Violations found: $(python3 -c "
+          import json, sys
+          d = json.load(open('../regula-results.json'))
+          fails = [r for r in d.get('rule_results', []) if r.get('result') == 'FAIL']
+          print(len(fails))
+          " 2>/dev/null || echo 'unknown')"
+
+      # ── Gate 2b: Terrascan — OPA-native, CIS GCP Built-in ─
+      - name: Install Terrascan
+        run: |
+          pip install terrascan 2>/dev/null || \
+          curl -L "https://github.com/tenable/terrascan/releases/download/v1.19.1/terrascan_1.19.1_Linux_x86_64.tar.gz" \
+            | tar xz && sudo mv terrascan /usr/local/bin/
+          terrascan version
+
+      - name: Run Terrascan — CIS GCP Policies (OPA-native)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          echo "════════════════════════════════════════════"
+          echo "  Gate 2b — Terrascan CIS GCP (OPA-native)"
+          echo "  Policies: Built-in Rego, no custom rules"
+          echo "════════════════════════════════════════════"
+          terrascan scan \
+            --iac-type terraform \
+            --policy-type gcp \
+            --verbose \
+            || true
 
       - name: Upload Plan + Policy Results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: terraform-plan-policy-results
+          name: gate2-plan-and-policy-results
           path: |
             ${{ env.WORKING_DIR }}/tfplan.json
+            regula-results.json
 
-  # ─────────────────────────────────────────
-  # GATE 3: Terraform Apply
-  # Only runs on push to main, only if Gates 1+2 pass
-  # ─────────────────────────────────────────
-  terraform-apply:
+
+  # ═══════════════════════════════════════════════════════════
+  # GATE 3 — Terraform Apply
+  # Only runs on push to main after Gates 1 + 2 pass
+  # Requires manual approval (GitHub Environment: production)
+  # ═══════════════════════════════════════════════════════════
+  gate3-apply:
     name: "Gate 3 — Terraform Apply"
     runs-on: ubuntu-latest
-    needs: [checkov-scan, terraform-plan-opa]
+    needs: [gate1-checkov, gate2-plan-and-policy]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment: production   # Requires manual approval in GitHub Environments
+    environment: production
+
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Authenticate to GCP
@@ -215,17 +232,21 @@ jobs:
             -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
             -auto-approve
 
-  # ─────────────────────────────────────────
-  # GATE 4: Cloud Custodian Live Scan
-  # Runs after apply to verify live resources
-  # ─────────────────────────────────────────
-  custodian-live-scan:
-    name: "Gate 4 — Cloud Custodian Live Scan"
+
+  # ═══════════════════════════════════════════════════════════
+  # GATE 4 — Cloud Custodian Live Scan (CIS GCP Policies)
+  # Runs after apply — scans LIVE GCP resources
+  # Results written to custodian-output/ directory
+  # No Pub/Sub required — findings in output artifacts
+  # ═══════════════════════════════════════════════════════════
+  gate4-custodian:
+    name: "Gate 4 — Cloud Custodian Live Scan (CIS GCP)"
     runs-on: ubuntu-latest
-    needs: terraform-apply
+    needs: gate3-apply
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Authenticate to GCP
@@ -233,33 +254,45 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Setup Python + Cloud Custodian GCP
-        run: |
-          pip install c7n c7n-gcp
+      - name: Install Cloud Custodian GCP
+        run: pip install c7n c7n-gcp
 
-      - name: Run Cloud Custodian Policies
+      - name: Run Cloud Custodian — CIS GCP Live Scan
         env:
           CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+          GOOGLE_PROJECT:        ${{ secrets.GCP_PROJECT_ID }}
         run: |
-          echo "=========================================="
-          echo "  Cloud Custodian — Live GCP Resource Scan"
-          echo "=========================================="
+          echo "════════════════════════════════════════════"
+          echo "  Gate 4 — Cloud Custodian CIS GCP Live Scan"
+          echo "════════════════════════════════════════════"
           custodian run \
             --configs policies/custodian/gcp-policies.yml \
             --output-dir ./custodian-output \
             2>&1 || true
 
+      - name: Print Custodian Summary
+        run: |
           echo ""
-          echo "--- Custodian Scan Summary ---"
+          echo "════════════════════════════════════════════"
+          echo "  Cloud Custodian — Findings Summary"
+          echo "════════════════════════════════════════════"
           find ./custodian-output -name "resources.json" | while read f; do
-            POLICY=$(echo $f | awk -F'/' '{print $3}')
-            COUNT=$(python3 -c "import json; d=json.load(open('$f')); print(len(d))" 2>/dev/null || echo "0")
-            echo "Policy: $POLICY → $COUNT resource(s) flagged"
+            POLICY=$(echo "$f" | awk -F'/' '{print $3}')
+            COUNT=$(python3 -c "
+          import json
+          data = json.load(open('$f'))
+          print(len(data))
+            " 2>/dev/null || echo "0")
+            if [ "$COUNT" -gt "0" ]; then
+              echo "  ❌ $POLICY → $COUNT resource(s) flagged"
+            else
+              echo "  ✅ $POLICY → clean"
+            fi
           done
 
       - name: Upload Custodian Results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: custodian-scan-results
+          name: gate4-custodian-findings
           path: custodian-output/

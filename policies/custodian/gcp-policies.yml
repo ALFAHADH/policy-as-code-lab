@@ -1,17 +1,28 @@
 # ============================================================
-# Cloud Custodian — GCP Live Resource Policies
-# Runs against LIVE GCP resources (post-deploy scanning)
+# Cloud Custodian — GCP Live Resource Policies (Framework Style)
+# Based on CIS GCP Foundations Benchmark
 #
-# Run: custodian run --configs gcp-policies.yml \
-#        --output-dir ./custodian-output \
-#        -s gs://your-bucket/custodian-logs
+# Changes from v1:
+#   - Removed Pub/Sub notification (not needed for lab)
+#   - Results written to --output-dir automatically
+#   - Added c7n-packs compatible structure
+#   - Each policy maps to a CIS GCP control ID
+#
+# Run:
+#   custodian run --configs gcp-policies.yml --output-dir ./custodian-output
+#
+# View results:
+#   type custodian-output\<policy-name>\resources.json
 # ============================================================
 
 policies:
 
-  # ── POLICY 1: Detect open SSH firewall rules ──────────────
-  - name: gcp-firewall-open-ssh
-    description: "Detect GCP firewall rules allowing SSH (22) from 0.0.0.0/0"
+  # ── CIS GCP 3.6 — SSH access not restricted from internet ──
+  - name: cis-gcp-3-6-firewall-open-ssh
+    description: |
+      CIS GCP Foundations 3.6
+      Ensure that SSH access is restricted from the internet.
+      Firewall rules allowing TCP/22 from 0.0.0.0/0 or ::/0 are flagged.
     resource: gcp.firewall
     filters:
       - type: value
@@ -23,113 +34,106 @@ policies:
         value:
           - "0.0.0.0/0"
           - "::/0"
-      - type: value
-        key: "allowed[].ports[]"
-        op: intersect
-        value: ["22", "3389"]
-    actions:
-      - type: notify
-        template: default
-        subject: "[CUSTODIAN ALERT] Open SSH Firewall Rule Detected"
-        to:
-          - s.alfahadh.472@gmail.com #Replace with your email
-        transport:
-          type: pubsub
-          topic: projects/alfahadh-projects/topics/custodian-alerts   # Replace {project}
 
-  # ── POLICY 2: Detect GCS buckets with public access ──────
-  - name: gcp-bucket-public-access
-    description: "Find GCS buckets accessible by allUsers or allAuthenticatedUsers"
+  # ── CIS GCP 3.7 — RDP access not restricted from internet ──
+  - name: cis-gcp-3-7-firewall-open-rdp
+    description: |
+      CIS GCP Foundations 3.7
+      Ensure that RDP access is restricted from the internet.
+      Firewall rules allowing TCP/3389 from 0.0.0.0/0 or ::/0 are flagged.
+    resource: gcp.firewall
+    filters:
+      - type: value
+        key: direction
+        value: INGRESS
+      - type: value
+        key: "sourceRanges"
+        op: intersect
+        value:
+          - "0.0.0.0/0"
+          - "::/0"
+
+  # ── CIS GCP 5.1 — GCS bucket not uniformly private ─────────
+  - name: cis-gcp-5-1-bucket-uniform-access
+    description: |
+      CIS GCP Foundations 5.1
+      Ensure that Cloud Storage bucket is not anonymously or publicly accessible.
+      uniform_bucket_level_access must be enabled.
     resource: gcp.bucket
     filters:
       - type: value
         key: iamConfiguration.uniformBucketLevelAccess.enabled
-        value: false
-    actions:
-      - type: notify
-        template: default
-        subject: "[CUSTODIAN ALERT] GCS Bucket Public Access Detected"
-        to:
-          - s.alfahadh.472@gmail.com #Replace with your email
-        transport:
-          type: pubsub
-          topic: projects/alfahadh-projects/topics/custodian-alerts
+        op: ne
+        value: true
 
-  # ── POLICY 3: GCS buckets without versioning ─────────────
-  - name: gcp-bucket-no-versioning
-    description: "Find GCS buckets without versioning enabled"
+  # ── CIS GCP 5.2 — GCS bucket logging disabled ───────────────
+  - name: cis-gcp-5-2-bucket-logging
+    description: |
+      CIS GCP Foundations 5.2
+      Ensure that logging is enabled for Cloud Storage buckets.
     resource: gcp.bucket
     filters:
       - type: value
-        key: versioning.enabled
-        op: ne
-        value: true
-    actions:
-      - type: notify
-        template: default
-        subject: "[CUSTODIAN ALERT] GCS Bucket Versioning Not Enabled"
-        to:
-          - s.alfahadh.472@gmail.com #Replace with your email
-        transport:
-          type: pubsub
-          topic: projects/{project}/topics/custodian-alerts
+        key: logging
+        value: absent
 
-  # ── POLICY 4: GCE VMs without Shielded VM ────────────────
-  - name: gcp-vm-no-shielded
-    description: "Find GCE VMs without Shielded VM configuration"
+  # ── CIS GCP 4.1 — VM instances use non-default SA ───────────
+  - name: cis-gcp-4-1-vm-default-sa
+    description: |
+      CIS GCP Foundations 4.1
+      Ensure that instances are not configured to use the default service account
+      with full access to all cloud APIs.
+    resource: gcp.instance
+    filters:
+      - type: value
+        key: "serviceAccounts[0].email"
+        op: contains
+        value: "compute@developer.gserviceaccount.com"
+
+  # ── CIS GCP 4.4 — VM Shielded VM not enabled ────────────────
+  - name: cis-gcp-4-4-vm-shielded
+    description: |
+      CIS GCP Foundations 4.4
+      Ensure that Compute instances have Shielded VM enabled
+      (secure boot, vTPM, integrity monitoring).
     resource: gcp.instance
     filters:
       - type: value
         key: shieldedInstanceConfig.enableSecureBoot
         op: ne
         value: true
-    actions:
-      - type: notify
-        template: default
-        subject: "[CUSTODIAN ALERT] GCE VM Without Shielded VM Detected"
-        to:
-          - s.alfahadh.472@gmail.com #Replace with your email
-        transport:
-          type: pubsub
-          topic: projects/{project}/topics/custodian-alerts
 
-  # ── POLICY 5: GCE VMs with public IP ─────────────────────
-  - name: gcp-vm-public-ip
-    description: "Find GCE VMs with external/public IP addresses assigned"
+  # ── CIS GCP 4.6 — VM OS Login not enabled ───────────────────
+  - name: cis-gcp-4-6-vm-os-login
+    description: |
+      CIS GCP Foundations 4.6
+      Ensure that OS Login is enabled on instances for centralized SSH key management.
     resource: gcp.instance
     filters:
       - type: value
-        key: "networkInterfaces[].accessConfigs[].natIP"
+        key: "metadata.items[?key=='enable-oslogin'].value"
         op: ne
-        value: null
-    actions:
-      - type: notify
-        template: default
-        subject: "[CUSTODIAN ALERT] GCE VM with Public IP Detected"
-        to:
-          - s.alfahadh.472@gmail.com #Replace with your email
-        transport:
-          type: pubsub
-          topic: projects/{project}/topics/custodian-alerts
+        value: "TRUE"
 
-  # ── POLICY 6: Resources missing required labels ───────────
-  - name: gcp-vm-missing-labels
-    description: "Find GCE VMs missing required governance labels"
+  # ── CIS GCP 4.5 — VM serial ports not enabled ───────────────
+  - name: cis-gcp-4-5-vm-serial-port
+    description: |
+      CIS GCP Foundations 4.5
+      Ensure that serial port access is disabled on all instances.
     resource: gcp.instance
     filters:
-      - or:
-          - type: value
-            key: "labels.owner"
-            value: absent
-          - type: value
-            key: "labels.environment"
-            value: absent
-    actions:
-      - type: notify
-        template: default
-        subject: "[CUSTODIAN ALERT] GCE VM Missing Required Labels"
-        to:
-          - s.alfahadh.472@gmail.com #Replace with your email
-        transport:
-          type: pubsub
-          topic: projects/{project}/topics/custodian-alerts
+      - type: value
+        key: "metadata.items[?key=='serial-port-enable'].value"
+        value: "true"
+
+  # ── CIS GCP 4.9 — VM has public IP ──────────────────────────
+  - name: cis-gcp-4-9-vm-public-ip
+    description: |
+      CIS GCP Foundations 4.9
+      Ensure that Compute instances do not have public IP addresses.
+    resource: gcp.instance
+    filters:
+      - type: value
+        key: "networkInterfaces[0].accessConfigs"
+        op: ne
+        value: absent
