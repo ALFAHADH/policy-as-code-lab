@@ -170,9 +170,10 @@ jobs:
       # ── Gate 2b: Terrascan — OPA-native, CIS GCP Built-in ─
       - name: Install Terrascan
         run: |
-          pip install terrascan 2>/dev/null || \
           curl -L "https://github.com/tenable/terrascan/releases/download/v1.19.1/terrascan_1.19.1_Linux_x86_64.tar.gz" \
-            | tar xz && sudo mv terrascan /usr/local/bin/
+            -o terrascan.tar.gz
+          tar -xzf terrascan.tar.gz terrascan
+          sudo mv terrascan /usr/local/bin/
           terrascan version
 
       - name: Run Terrascan — CIS GCP Policies (OPA-native)
