@@ -42,7 +42,7 @@ resource "google_compute_firewall" "allow_ssh_world" {
     ports    = ["22"]
   }
 
-  source_ranges = ["0.0.0.0/0"]   # ← intentional violation
+  source_ranges = ["0.0.0.0/0"] # ← intentional violation
   target_tags   = ["lab-vm"]
 
   # ❌ VIOLATION: No logging enabled (CKV2_GCP_12)
@@ -76,14 +76,14 @@ resource "google_storage_bucket" "lab_bucket" {
 resource "google_storage_bucket_iam_member" "public_read" {
   bucket = google_storage_bucket.lab_bucket.name
   role   = "roles/storage.objectViewer"
-  member = "allUsers"   # ← intentional violation — makes bucket public
+  member = "allUsers" # ← intentional violation — makes bucket public
 }
 
 
 # ── RESOURCE 3: GCE VM (VIOLATION PLANTED) ───────────────────
 resource "google_compute_instance" "lab_vm" {
   name         = "policy-lab-vm"
-  machine_type = "e2-micro"   # free-tier eligible
+  machine_type = "e2-micro" # free-tier eligible
   zone         = var.zone
 
   tags = ["lab-vm"]

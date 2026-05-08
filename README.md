@@ -294,8 +294,8 @@ git add . && git commit -m "test: trigger policy pipeline"
 git push origin feature/test-policy-pipeline
 ```
 
-Then go to GitHub → Pull Requests → Open new PR  
-Watch the Actions tab — Gates 1 and 2 will run and report violations.  
+Then go to GitHub → Pull Requests → Open new PR
+Watch the Actions tab — Gates 1 and 2 will run and report violations.
 Gate 3 (apply) only runs when you merge to main.
 
 ### 5.7 Test Cloud Custodian (After Apply)
