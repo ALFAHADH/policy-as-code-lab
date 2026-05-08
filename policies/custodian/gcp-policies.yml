@@ -32,10 +32,10 @@ policies:
         template: default
         subject: "[CUSTODIAN ALERT] Open SSH Firewall Rule Detected"
         to:
-          - your-email@domain.com     # Replace with your email
+          - s.alfahadh.472@gmail.com #Replace with your email
         transport:
           type: pubsub
-          topic: projects/{project}/topics/custodian-alerts   # Replace {project}
+          topic: projects/alfahadh-projects/topics/custodian-alerts   # Replace {project}
 
   # ── POLICY 2: Detect GCS buckets with public access ──────
   - name: gcp-bucket-public-access
@@ -50,10 +50,10 @@ policies:
         template: default
         subject: "[CUSTODIAN ALERT] GCS Bucket Public Access Detected"
         to:
-          - your-email@domain.com
+          - s.alfahadh.472@gmail.com #Replace with your email
         transport:
           type: pubsub
-          topic: projects/{project}/topics/custodian-alerts
+          topic: projects/alfahadh-projects/topics/custodian-alerts
 
   # ── POLICY 3: GCS buckets without versioning ─────────────
   - name: gcp-bucket-no-versioning
@@ -69,7 +69,7 @@ policies:
         template: default
         subject: "[CUSTODIAN ALERT] GCS Bucket Versioning Not Enabled"
         to:
-          - your-email@domain.com
+          - s.alfahadh.472@gmail.com #Replace with your email
         transport:
           type: pubsub
           topic: projects/{project}/topics/custodian-alerts
@@ -88,7 +88,7 @@ policies:
         template: default
         subject: "[CUSTODIAN ALERT] GCE VM Without Shielded VM Detected"
         to:
-          - your-email@domain.com
+          - s.alfahadh.472@gmail.com #Replace with your email
         transport:
           type: pubsub
           topic: projects/{project}/topics/custodian-alerts
@@ -107,7 +107,7 @@ policies:
         template: default
         subject: "[CUSTODIAN ALERT] GCE VM with Public IP Detected"
         to:
-          - your-email@domain.com
+          - s.alfahadh.472@gmail.com #Replace with your email
         transport:
           type: pubsub
           topic: projects/{project}/topics/custodian-alerts
@@ -129,7 +129,7 @@ policies:
         template: default
         subject: "[CUSTODIAN ALERT] GCE VM Missing Required Labels"
         to:
-          - your-email@domain.com
+          - s.alfahadh.472@gmail.com #Replace with your email
         transport:
           type: pubsub
           topic: projects/{project}/topics/custodian-alerts
