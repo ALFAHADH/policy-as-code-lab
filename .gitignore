@@ -1,0 +1,24 @@
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfvars        # Never commit real values
+terraform/tfplan.binary
+terraform/tfplan.json
+terraform/*.tfstate
+terraform/*.tfstate.backup
+
+# GCP Service Account Keys — NEVER COMMIT
+sa-key.json
+*.json.key
+*-key.json
+
+# Cloud Custodian output
+custodian-output/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store

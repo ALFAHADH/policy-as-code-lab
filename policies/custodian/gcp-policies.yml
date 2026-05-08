@@ -1,0 +1,135 @@
+# ============================================================
+# Cloud Custodian — GCP Live Resource Policies
+# Runs against LIVE GCP resources (post-deploy scanning)
+#
+# Run: custodian run --configs gcp-policies.yml \
+#        --output-dir ./custodian-output \
+#        -s gs://your-bucket/custodian-logs
+# ============================================================
+
+policies:
+
+  # ── POLICY 1: Detect open SSH firewall rules ──────────────
+  - name: gcp-firewall-open-ssh
+    description: "Detect GCP firewall rules allowing SSH (22) from 0.0.0.0/0"
+    resource: gcp.firewall
+    filters:
+      - type: value
+        key: direction
+        value: INGRESS
+      - type: value
+        key: "sourceRanges"
+        op: intersect
+        value:
+          - "0.0.0.0/0"
+          - "::/0"
+      - type: value
+        key: "allowed[].ports[]"
+        op: intersect
+        value: ["22", "3389"]
+    actions:
+      - type: notify
+        template: default
+        subject: "[CUSTODIAN ALERT] Open SSH Firewall Rule Detected"
+        to:
+          - your-email@domain.com     # Replace with your email
+        transport:
+          type: pubsub
+          topic: projects/{project}/topics/custodian-alerts   # Replace {project}
+
+  # ── POLICY 2: Detect GCS buckets with public access ──────
+  - name: gcp-bucket-public-access
+    description: "Find GCS buckets accessible by allUsers or allAuthenticatedUsers"
+    resource: gcp.bucket
+    filters:
+      - type: value
+        key: iamConfiguration.uniformBucketLevelAccess.enabled
+        value: false
+    actions:
+      - type: notify
+        template: default
+        subject: "[CUSTODIAN ALERT] GCS Bucket Public Access Detected"
+        to:
+          - your-email@domain.com
+        transport:
+          type: pubsub
+          topic: projects/{project}/topics/custodian-alerts
+
+  # ── POLICY 3: GCS buckets without versioning ─────────────
+  - name: gcp-bucket-no-versioning
+    description: "Find GCS buckets without versioning enabled"
+    resource: gcp.bucket
+    filters:
+      - type: value
+        key: versioning.enabled
+        op: ne
+        value: true
+    actions:
+      - type: notify
+        template: default
+        subject: "[CUSTODIAN ALERT] GCS Bucket Versioning Not Enabled"
+        to:
+          - your-email@domain.com
+        transport:
+          type: pubsub
+          topic: projects/{project}/topics/custodian-alerts
+
+  # ── POLICY 4: GCE VMs without Shielded VM ────────────────
+  - name: gcp-vm-no-shielded
+    description: "Find GCE VMs without Shielded VM configuration"
+    resource: gcp.instance
+    filters:
+      - type: value
+        key: shieldedInstanceConfig.enableSecureBoot
+        op: ne
+        value: true
+    actions:
+      - type: notify
+        template: default
+        subject: "[CUSTODIAN ALERT] GCE VM Without Shielded VM Detected"
+        to:
+          - your-email@domain.com
+        transport:
+          type: pubsub
+          topic: projects/{project}/topics/custodian-alerts
+
+  # ── POLICY 5: GCE VMs with public IP ─────────────────────
+  - name: gcp-vm-public-ip
+    description: "Find GCE VMs with external/public IP addresses assigned"
+    resource: gcp.instance
+    filters:
+      - type: value
+        key: "networkInterfaces[].accessConfigs[].natIP"
+        op: ne
+        value: null
+    actions:
+      - type: notify
+        template: default
+        subject: "[CUSTODIAN ALERT] GCE VM with Public IP Detected"
+        to:
+          - your-email@domain.com
+        transport:
+          type: pubsub
+          topic: projects/{project}/topics/custodian-alerts
+
+  # ── POLICY 6: Resources missing required labels ───────────
+  - name: gcp-vm-missing-labels
+    description: "Find GCE VMs missing required governance labels"
+    resource: gcp.instance
+    filters:
+      - or:
+          - type: value
+            key: "labels.owner"
+            value: absent
+          - type: value
+            key: "labels.environment"
+            value: absent
+    actions:
+      - type: notify
+        template: default
+        subject: "[CUSTODIAN ALERT] GCE VM Missing Required Labels"
+        to:
+          - your-email@domain.com
+        transport:
+          type: pubsub
+          topic: projects/{project}/topics/custodian-alerts

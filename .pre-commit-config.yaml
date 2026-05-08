@@ -1,0 +1,34 @@
+# ============================================================
+# Pre-commit Hooks — Local Developer Gate (Gate 0)
+# Runs before every git commit on your machine
+#
+# Setup:
+#   pip install pre-commit
+#   pre-commit install
+#   pre-commit run --all-files   (to test manually)
+# ============================================================
+
+repos:
+  # ── Terraform formatting check ───────────────────────────
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.92.0
+    hooks:
+      - id: terraform_fmt
+        name: "Terraform Format Check"
+      - id: terraform_validate
+        name: "Terraform Validate"
+      - id: terraform_checkov
+        name: "Checkov Policy Scan"
+        args:
+          - --args=--check CKV_GCP_88,CKV_GCP_28,CKV_GCP_29,CKV_GCP_32,CKV_GCP_35,CKV_GCP_39,CKV_GCP_40
+          - --args=--soft-fail    # Remove to hard-block commits with violations
+
+  # ── General file hygiene ─────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: detect-private-key        # Never commit SA keys!

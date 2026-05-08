@@ -1,0 +1,30 @@
+# ============================================================
+# Checkov Configuration
+# Applies when running: checkov --directory terraform/
+# ============================================================
+
+compact: true
+directory:
+  - terraform
+
+framework:
+  - terraform
+
+check:
+  # GCP Firewall
+  - CKV_GCP_88    # No ingress from 0.0.0.0/0 to port 22
+  - CKV2_GCP_12   # Firewall logging enabled
+  # GCP Storage
+  - CKV_GCP_28    # Uniform bucket-level access
+  - CKV_GCP_29    # Bucket versioning enabled
+  - CKV_GCP_78    # Bucket retention policy
+  # GCP Compute
+  - CKV_GCP_32    # Instances use non-default SA
+  - CKV_GCP_35    # Serial port access disabled
+  - CKV_GCP_38    # Boot disk CMEK encryption
+  - CKV_GCP_39    # Shielded VM enabled
+  - CKV_GCP_40    # No public IP on instances
+  - CKV_GCP_30    # No default SA with full API scope
+
+output: cli
+soft-fail: true    # Set to false to fail pipeline on violation
