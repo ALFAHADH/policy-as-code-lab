@@ -126,7 +126,7 @@ jobs:
           curl -sL https://github.com/fugue/regula/releases/download/v${{ env.REGULA_VERSION }}/regula_${{ env.REGULA_VERSION }}_Linux_x86_64.tar.gz \
             | tar xz
           sudo mv regula /usr/local/bin/
-          regula --version
+          regula version
 
       - name: Run Regula — CIS GCP + NIST + PCI-DSS
         working-directory: ${{ env.WORKING_DIR }}
