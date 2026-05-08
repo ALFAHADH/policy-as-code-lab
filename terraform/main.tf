@@ -42,7 +42,7 @@ resource "google_compute_firewall" "allow_ssh_world" {
     ports    = ["22"]
   }
 
-  source_ranges = ["0.0.0.0/0"] # ← intentional violation
+  source_ranges = ["10.0.1.0/24"] # ← intentional violation
   target_tags   = ["lab-vm"]
 
   # ❌ VIOLATION: No logging enabled (CKV2_GCP_12)
@@ -57,13 +57,13 @@ resource "google_storage_bucket" "lab_bucket" {
   force_destroy = true
 
   # ❌ VIOLATION: No versioning enabled (CKV_GCP_29)
-  # versioning { enabled = true }
+  versioning { enabled = true }
 
   # ❌ VIOLATION: No uniform bucket-level access (CKV_GCP_28)
-  uniform_bucket_level_access = false
+  uniform_bucket_level_access = true
 
   # ❌ VIOLATION: No retention policy (CKV_GCP_78)
-  # retention_policy { retention_period = 604800 }
+  retention_policy { retention_period = 604800 }
 
   # Missing labels — flagged by custodian
   labels = {
@@ -91,7 +91,8 @@ resource "google_compute_instance" "lab_vm" {
   # ❌ VIOLATION: No required labels (CKV_GCP_32)
   labels = {
     environment = var.environment
-    # missing: "owner", "cost-center" labels
+    owner       = "alfahadh"
+    cost-center = "it"
   }
 
   boot_disk {
@@ -109,15 +110,15 @@ resource "google_compute_instance" "lab_vm" {
 
     # ❌ VIOLATION: Public IP assigned (CKV_GCP_40)
     # Remove this block to fix the violation
-    access_config {}
+    #  access_config {}
   }
 
   # ❌ VIOLATION: Shielded VM not enabled (CKV_GCP_39)
-  # shielded_instance_config {
-  #   enable_secure_boot          = true
-  #   enable_vtpm                 = true
-  #   enable_integrity_monitoring = true
-  # }
+  shielded_instance_config {
+    enable_secure_boot          = true
+    enable_vtpm                 = true
+    enable_integrity_monitoring = true
+  }
 
   # ❌ VIOLATION: Default service account with full API access (CKV_GCP_30)
   service_account {
@@ -127,10 +128,10 @@ resource "google_compute_instance" "lab_vm" {
 
   metadata = {
     # ❌ VIOLATION: OS Login not enabled (CKV_GCP_32)
-    # enable-oslogin = "TRUE"
+    enable-oslogin = "TRUE"
 
     # ❌ VIOLATION: Serial port enabled (CKV_GCP_35)
-    serial-port-enable = "true"
+    serial-port-enable = "false"
   }
 
   # Ensure VM is deleted before firewall (dependency order)
